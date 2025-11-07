@@ -38,18 +38,17 @@ def read_root():
 
 @app.post("/chat")
 async def chat(msg: ChatMessage):
-    """
-    Tar emot ett meddelande från David, skickar det till Anthropic,
-    och returnerar ett coachande svar.
-    """
     prompt = f"{HUMAN_PROMPT} {msg.message}\n{AI_PROMPT}"
     try:
         response = client.completions.create(
             model="claude-3-haiku-20240307",
-            max_tokens_to_sample=400,
+            max_tokens_to_sample=600,   # ökat lite
             temperature=0.7,
             prompt=SYSTEM_PROMPT + prompt
         )
+        print("DEBUG:", response)  # <-- logga hela svaret
         return {"reply": response.completion.strip()}
     except Exception as e:
+        print("ERROR:", e)
         return {"error": str(e)}
+

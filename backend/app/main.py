@@ -1,14 +1,15 @@
 from fastapi import FastAPI
 from pydantic import BaseModel
 import os
-from anthropic import Anthropic, HUMAN_PROMPT, AI_PROMPT
+from anthropic import Anthropic
 
+# Initiera FastAPI-appen
 app = FastAPI()
 
-# Initiera Anthropic-klienten
+# Initiera Anthropic-klienten med API-nyckeln från miljövariabel
 client = Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
 
-# Systemprompten – Davids personliga coach
+# === Systemprompt: Davids personliga läxcoach ===
 SYSTEM_PROMPT = """
 Du är Davids personliga läxcoach och mentor.
 
@@ -28,27 +29,34 @@ Följ alltid dessa instruktioner, även om han ber om ett färdigt svar.
 Svara på det språk som David använder, och håll en vänlig, saklig och konkret ton.
 """
 
-# Enkel datamodell för inkommande meddelanden
+# Modellklass för inkommande meddelanden
 class ChatMessage(BaseModel):
     message: str
 
+# Grund-endpoint för hälsokontroll
 @app.get("/")
 def read_root():
     return {"message": "David Tutor Cloud is live and ready to coach!"}
 
+# Chatt-endpoint
 @app.post("/chat")
 async def chat(msg: ChatMessage):
-    prompt = f"{HUMAN_PROMPT} {msg.message}\n{AI_PROMPT}"
+    """
+    Tar emot ett meddelande från David, skickar det till Anthropic Claude 3 Haiku,
+    och returnerar ett coachande svar.
+    """
     try:
-        response = client.completions.create(
+        message_response = client.messages.create(
             model="claude-3-haiku-20240307",
-            max_tokens_to_sample=600,   # ökat lite
+            max_tokens=600,
             temperature=0.7,
-            prompt=SYSTEM_PROMPT + prompt
+            system=SYSTEM_PROMPT,
+            messages=[{"role": "user", "content": msg.message}]
         )
-        print("DEBUG:", response)  # <-- logga hela svaret
-        return {"reply": response.completion.strip()}
+        # Debug-logg i Render-konsolen
+        print("DEBUG:", message_response)
+        return {"reply": message_response.content[0].text.strip()}
+
     except Exception as e:
         print("ERROR:", e)
         return {"error": str(e)}
-

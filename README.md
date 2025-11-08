@@ -38,4 +38,11 @@ VS Code
 
 Notes
 - Don't commit virtual environments. `.venv/` is in `.gitignore`.
+
+Environment variables (important for deployments)
+- `ANTHROPIC_API_KEY` (backend) — din Anthropic API-nyckel.
+- `APP_API_KEY` (backend + frontend) — server-till-server API-nyckel som frontend skickar i headeren `X-API-KEY`. Sätt detta i både backend- och frontend-deploy för att autentisera anrop.
+- `DAVID_PASSWORD` (frontend) — ett enkelt lösenord som endast David känner till; Streamlit-frontend kräver detta innan chattgränssnittet visas.
+
+When deploying to Render (or similar), add the three env vars to the service settings. `APP_API_KEY` must match between frontend and backend so only authenticated requests succeed.
 # David Tutor Cloud

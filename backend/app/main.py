@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Header, Depends
 from pydantic import BaseModel
 import os
 from anthropic import Anthropic
@@ -8,6 +8,23 @@ app = FastAPI()
 
 # Initiera Anthropic-klienten med API-nyckeln från miljövariabel
 client = Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+
+# Enkel API-nyckel-skydd: kräver att klienten skickar headern X-API-KEY
+# Sätt APP_API_KEY i din miljö (t.ex. i Render) så endast innehavare av den
+# nyckeln kan anropa /chat.
+APP_API_KEY = os.getenv("APP_API_KEY")
+
+def verify_api_key(x_api_key: str | None = Header(None, alias="X-API-KEY")) -> bool:
+    """Dependency som validerar X-API-KEY mot APP_API_KEY.
+
+    Om APP_API_KEY inte är satt returneras 500 för att undvika en oskyddad
+    /chat-endpoint i produktion.
+    """
+    if not APP_API_KEY:
+        raise HTTPException(status_code=500, detail="Server misconfigured: APP_API_KEY not set")
+    if x_api_key != APP_API_KEY:
+        raise HTTPException(status_code=401, detail="Unauthorized: invalid API key")
+    return True
 
 # === Systemprompt: Davids personliga läxcoach ===
 SYSTEM_PROMPT = """
@@ -40,7 +57,7 @@ def read_root():
 
 # Chatt-endpoint
 @app.post("/chat")
-async def chat(msg: ChatMessage):
+async def chat(msg: ChatMessage, _auth: bool = Depends(verify_api_key)):
     """
     Tar emot ett meddelande från David, skickar det till Anthropic Claude 3 Haiku,
     och returnerar ett coachande svar.

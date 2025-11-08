@@ -1,7 +1,10 @@
-from fastapi import FastAPI, HTTPException, Header, Depends
+from fastapi import FastAPI, HTTPException, Header, Depends, Request
 from pydantic import BaseModel
 import os
 from anthropic import Anthropic
+import logging
+import json
+from pathlib import Path
 
 # Initiera FastAPI-appen
 app = FastAPI()
@@ -14,16 +17,45 @@ client = Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
 # nyckeln kan anropa /chat.
 APP_API_KEY = os.getenv("APP_API_KEY")
 
-def verify_api_key(x_api_key: str | None = Header(None, alias="X-API-KEY")) -> bool:
+# Logginställning: logga autentiseringsförsök till en fil i backend/app/
+LOG_PATH = Path(__file__).parent / "auth.log"
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(message)s",
+    handlers=[logging.FileHandler(LOG_PATH, encoding="utf-8"), logging.StreamHandler()],
+)
+
+# Davids lösenord lagras i en enkel lokal fil (kan läsas/skrivas via /admin)
+PASSWORD_STORE = Path(__file__).parent / "password_store.json"
+
+def _read_stored_password() -> str | None:
+    if PASSWORD_STORE.exists():
+        try:
+            data = json.loads(PASSWORD_STORE.read_text(encoding="utf-8"))
+            return data.get("password")
+        except Exception:
+            return None
+    return os.getenv("DAVID_PASSWORD")
+
+def _write_stored_password(new_password: str) -> None:
+    PASSWORD_STORE.write_text(json.dumps({"password": new_password}), encoding="utf-8")
+
+DAVID_PASSWORD = _read_stored_password()
+
+def verify_api_key(request: Request, x_api_key: str | None = Header(None, alias="X-API-KEY")) -> bool:
     """Dependency som validerar X-API-KEY mot APP_API_KEY.
 
     Om APP_API_KEY inte är satt returneras 500 för att undvika en oskyddad
     /chat-endpoint i produktion.
     """
+    client_ip = request.client.host if request.client else "unknown"
     if not APP_API_KEY:
+        logging.error(f"Auth failed (no APP_API_KEY configured) ip={client_ip}")
         raise HTTPException(status_code=500, detail="Server misconfigured: APP_API_KEY not set")
     if x_api_key != APP_API_KEY:
+        logging.warning(f"Unauthorized access attempt from {client_ip} header={x_api_key}")
         raise HTTPException(status_code=401, detail="Unauthorized: invalid API key")
+    logging.info(f"Successful auth from {client_ip}")
     return True
 
 # === Systemprompt: Davids personliga läxcoach ===
@@ -121,5 +153,38 @@ async def chat(msg: ChatMessage, _auth: bool = Depends(verify_api_key)):
         return {"reply": reply_text.strip()}
 
     except Exception as e:
-        print("ERROR:", e)
+        logging.exception("Error in /chat")
         return {"error": str(e)}
+
+
+@app.get("/admin/password")
+def get_password(_auth: bool = Depends(verify_api_key)):
+    """Returnerar den sparade David-lösenordet. Skyddad med APP_API_KEY.
+
+    Obs: detta returnerar lösenord i klartext — endast använd för drift/administration.
+    """
+    pwd = _read_stored_password()
+    if pwd is None:
+        raise HTTPException(status_code=404, detail="No password set")
+    return {"password": pwd}
+
+
+@app.post("/admin/password")
+def set_password(body: dict, _auth: bool = Depends(verify_api_key)):
+    """Sätter ett nytt lösenord för David (skrivs till lokal password_store.json).
+
+    Request-body: {"new_password": "..."}
+    """
+    new = body.get("new_password") if isinstance(body, dict) else None
+    if not new:
+        raise HTTPException(status_code=400, detail="new_password required")
+    try:
+        _write_stored_password(new)
+        # Uppdatera runtime-variabel
+        global DAVID_PASSWORD
+        DAVID_PASSWORD = new
+        logging.info("David password updated via /admin/password")
+        return {"ok": True}
+    except Exception as e:
+        logging.exception("Failed to write new password")
+        raise HTTPException(status_code=500, detail=str(e))

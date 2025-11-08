@@ -7,10 +7,19 @@ import requests
 BACKEND_URL = os.getenv("BACKEND_URL", "https://david-tutor-1.onrender.com/chat")
 st.set_page_config(page_title="David Tutor Cloud", page_icon="🎓")
 
+# Streamlit rekommenderar att använda secrets.toml (TOML) för hemligheter.
+# Vi läser först från st.secrets (t.ex. .streamlit/secrets.toml eller Streamlit Cloud Secrets)
+# och faller tillbaka på miljövariabler om de saknas.
+secrets = {}
+try:
+    secrets = st.secrets
+except Exception:
+    secrets = {}
+
 # Säkerhetsinställningar: kräver ett lösenord för att använda klienten (DAVID_PASSWORD)
 # och skickar en server-till-server API-nyckel i headern (APP_API_KEY) så bara backend accepterar.
-APP_API_KEY = os.getenv("APP_API_KEY")
-DAVID_PASSWORD = os.getenv("DAVID_PASSWORD")
+APP_API_KEY = secrets.get("APP_API_KEY") or os.getenv("APP_API_KEY")
+DAVID_PASSWORD = secrets.get("DAVID_PASSWORD") or os.getenv("DAVID_PASSWORD")
 
 # === UI-layout ===
 st.title("🎓 David Tutor Cloud")

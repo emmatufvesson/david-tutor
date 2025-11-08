@@ -1,0 +1,15 @@
+# Virtual envs
+.venv/
+backend/venv/
+frontend/venv/
+
+# Python cache
+__pycache__/
+**/__pycache__/
+
+# Editor directories
+.vscode/
+
+# Byte-compiled / optimized / DLL files
+*.py[cod]
+*$py.class

@@ -55,7 +55,53 @@ async def chat(msg: ChatMessage):
         )
         # Debug-logg i Render-konsolen
         print("DEBUG:", message_response)
-        return {"reply": message_response.content[0].text.strip()}
+
+        # Robust extraction of the reply text to support different SDK response shapes.
+        reply_text = None
+
+        # 1) Some SDK versions return a 'completion' attribute or key.
+        # Use getattr to avoid static attribute access errors in some SDK types.
+        completion_val = None
+        try:
+            completion_val = getattr(message_response, "completion", None)
+        except Exception:
+            completion_val = None
+        if completion_val is not None:
+            reply_text = completion_val
+        elif isinstance(message_response, dict) and "completion" in message_response:
+            reply_text = message_response["completion"]
+
+        # 2) If there's a 'content' attribute it may be a string or a list of blocks.
+        elif hasattr(message_response, "content"):
+            content = message_response.content
+            parts = []
+            if isinstance(content, str):
+                parts.append(content)
+            else:
+                for block in content:
+                    if isinstance(block, str):
+                        parts.append(block)
+                    elif hasattr(block, "text"):
+                        parts.append(getattr(block, "text") or "")
+                    else:
+                        # Prefer a callable to_plain_text if present, but access it via getattr
+                        to_plain = getattr(block, "to_plain_text", None)
+                        if callable(to_plain):
+                            try:
+                                parts.append(to_plain())
+                            except Exception:
+                                parts.append(str(block))
+                        elif hasattr(block, "content"):
+                            parts.append(str(getattr(block, "content") or ""))
+                        else:
+                            parts.append(str(block))
+            reply_text = "".join(parts)
+
+        # 3) Fallback to stringifying the whole response.
+        else:
+            reply_text = str(message_response)
+
+        return {"reply": reply_text.strip()}
 
     except Exception as e:
         print("ERROR:", e)

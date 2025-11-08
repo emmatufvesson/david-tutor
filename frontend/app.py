@@ -25,6 +25,11 @@ DAVID_PASSWORD = secrets.get("DAVID_PASSWORD") or os.getenv("DAVID_PASSWORD")
 st.title("🎓 David Tutor Cloud")
 st.caption("Din personliga läxcoach på webben")
 
+# Debug: visa om APP_API_KEY finns och vilken BACKEND_URL används (visas endast i UI)
+st.markdown("**DEBUG**")
+st.text(f"APP_API_KEY present: {bool(APP_API_KEY)}")
+st.text(f"BACKEND_URL: {BACKEND_URL}")
+
 if "history" not in st.session_state:
     st.session_state.history = []
 

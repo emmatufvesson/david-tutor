@@ -5,6 +5,7 @@ from anthropic import Anthropic
 import logging
 import json
 from pathlib import Path
+import bcrypt
 
 # Initiera FastAPI-appen
 app = FastAPI()
@@ -28,19 +29,21 @@ logging.basicConfig(
 # Davids lösenord lagras i en enkel lokal fil (kan läsas/skrivas via /admin)
 PASSWORD_STORE = Path(__file__).parent / "password_store.json"
 
-def _read_stored_password() -> str | None:
+def _read_password_hash() -> str | None:
+    """Returnerar sparad password-hash (eller None)."""
     if PASSWORD_STORE.exists():
         try:
             data = json.loads(PASSWORD_STORE.read_text(encoding="utf-8"))
-            return data.get("password")
+            return data.get("password_hash")
         except Exception:
             return None
-    return os.getenv("DAVID_PASSWORD")
+    return None
 
-def _write_stored_password(new_password: str) -> None:
-    PASSWORD_STORE.write_text(json.dumps({"password": new_password}), encoding="utf-8")
+def _write_password_hash(hash_str: str) -> None:
+    PASSWORD_STORE.write_text(json.dumps({"password_hash": hash_str}), encoding="utf-8")
 
-DAVID_PASSWORD = _read_stored_password()
+# We won't expose the DAVID_PASSWORD plaintext in backend runtime; frontend uses its own secret.
+DAVID_PASSWORD = os.getenv("DAVID_PASSWORD")
 
 def verify_api_key(request: Request, x_api_key: str | None = Header(None, alias="X-API-KEY")) -> bool:
     """Dependency som validerar X-API-KEY mot APP_API_KEY.
@@ -158,33 +161,23 @@ async def chat(msg: ChatMessage, _auth: bool = Depends(verify_api_key)):
 
 
 @app.get("/admin/password")
-def get_password(_auth: bool = Depends(verify_api_key)):
-    """Returnerar den sparade David-lösenordet. Skyddad med APP_API_KEY.
-
-    Obs: detta returnerar lösenord i klartext — endast använd för drift/administration.
-    """
-    pwd = _read_stored_password()
-    if pwd is None:
-        raise HTTPException(status_code=404, detail="No password set")
-    return {"password": pwd}
-
-
 @app.post("/admin/password")
 def set_password(body: dict, _auth: bool = Depends(verify_api_key)):
-    """Sätter ett nytt lösenord för David (skrivs till lokal password_store.json).
+    """Sätter ett nytt lösenord för David (lagrar en hash i password_store.json).
 
     Request-body: {"new_password": "..."}
+    Endast POST finns (GET tas bort av säkerhetsskäl).
     """
     new = body.get("new_password") if isinstance(body, dict) else None
     if not new:
         raise HTTPException(status_code=400, detail="new_password required")
     try:
-        _write_stored_password(new)
-        # Uppdatera runtime-variabel
-        global DAVID_PASSWORD
-        DAVID_PASSWORD = new
-        logging.info("David password updated via /admin/password")
+        # Hash the password with bcrypt and store the hash
+        hashed = bcrypt.hashpw(new.encode("utf-8"), bcrypt.gensalt())
+        # store as utf-8 string
+        _write_password_hash(hashed.decode("utf-8"))
+        logging.info("David password hash updated via /admin/password")
         return {"ok": True}
     except Exception as e:
-        logging.exception("Failed to write new password")
+        logging.exception("Failed to write new password hash")
         raise HTTPException(status_code=500, detail=str(e))

@@ -41,7 +41,9 @@ if DAVID_PASSWORD:
                 st.success("Inloggad")
             else:
                 st.error("Fel lösenord")
-        st.stop()
+        # Avbryt bara resten av skriptet om användaren fortfarande inte är autentiserad
+        if not st.session_state.authenticated:
+            st.stop()
 
 user_input = st.chat_input("Skriv ett meddelande till din coach...")
 
